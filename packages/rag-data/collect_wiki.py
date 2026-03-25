@@ -2,11 +2,27 @@ import os
 import wikipediaapi
 import json
 import argparse
+import time
+from requests.exceptions import JSONDecodeError as RequestsJSONDecodeError
 
 wiki = wikipediaapi.Wikipedia(
     language='ko',
-    user_agent='rag-data-bot/0.1 (for research purposes only;)'
+    user_agent='rag-data-bot/0.1 (contact: your-email@example.com; research purposes)'
 )
+
+def safe_get_text(page, max_retries=3, delay=1):
+    """API 호출 실패 시 재시도를 포함하여 안전하게 텍스트를 가져옵니다."""
+    for i in range(max_retries):
+        try:
+            # text 접근 시 실제 네트워크 요청이 발생할 수 있음
+            return page.text
+        except (RequestsJSONDecodeError, Exception) as e:
+            if i < max_retries - 1:
+                print(f"⚠️ '{page.title}' 가져오기 실패 (시도 {i+1}/{max_retries}). {delay}초 후 재시도... Error: {e}")
+                time.sleep(delay * (i + 1))
+            else:
+                print(f"❌ '{page.title}' 최종 가져오기 실패: {e}")
+    return ""
 
 def get_pages_in_category(cat_title: str, max_depth=2):
     category = wiki.page(cat_title)
@@ -20,14 +36,19 @@ def get_pages_in_category(cat_title: str, max_depth=2):
         visited_cats.add(cat.title)
 
         for member in cat.categorymembers.values():
+            # API 부하 분산을 위한 아주 짧은 지연
+            time.sleep(0.05)
+            
             if member.ns == wikipediaapi.Namespace.CATEGORY:
                 recurse(member, depth + 1)
             elif member.ns == wikipediaapi.Namespace.MAIN:
-                if member.title not in visited_titles and len(member.text) > 500:
-                    visited_titles.add(member.title)
-                    results.append(member)
-                    if len(results) % 10 == 0:
-                        print(f"len(results): {len(results)}")
+                if member.title not in visited_titles:
+                    text = safe_get_text(member)
+                    if len(text) > 500:
+                        visited_titles.add(member.title)
+                        results.append(member)
+                        if len(results) % 10 == 0:
+                            print(f"len(results): {len(results)}")
 
     recurse(category, 0)
     print(f"final len(results): {len(results)}")
@@ -44,10 +65,15 @@ def save_pages_as_jsonl(pages, output_path="data/wiki.jsonl"):
         os.makedirs(dir_name, exist_ok=True)
     with open(output_path, "w", encoding="utf-8") as f:
         for page in pages:
+            # 이미 safe_get_text로 가져왔으므로 캐시된 데이터를 사용하게 됨
+            text = page.text.strip()
+            if not text: # 만약 비어있다면 다시 시도
+                text = safe_get_text(page).strip()
+                
             record = {
                 "title": page.title,
                 "url": page.fullurl,
-                "text": page.text.strip(),
+                "text": text,
                 "source_type": "Wikipedia"
             }
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
