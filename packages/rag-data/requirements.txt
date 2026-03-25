@@ -1,0 +1,12 @@
+wikipedia-api>=0.6.0
+langchain-core>=0.2.0
+langchain-community>=0.2.0
+langchain-huggingface>=0.0.3
+faiss-cpu>=1.8.0
+torch>=2.0.0
+tqdm>=4.66.0
+python-slugify>=8.0.4
+psycopg[binary]>=3.1.18
+pgvector>=0.2.5
+sqlalchemy>=2.0.0
+langchain-postgres>=0.0.9
