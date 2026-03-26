@@ -16,7 +16,10 @@ def setup_langfuse_env():
         path = os.getenv("GGUF_MODEL_PATH", "model.gguf")
         model_name = os.path.basename(path)
     
-    env_str = f"{provider}/{model_name}"
+    # Langfuse environment: lowercase alphanumeric, hyphens, underscores only
+    import re
+    env_str = re.sub(r"[^a-z0-9_-]", "-", f"{provider}-{model_name}".lower())
+    env_str = re.sub(r"-+", "-", env_str).strip("-")
     # Langfuse SDK가 자동 인식하는 환경 변수 주입
     os.environ["LANGFUSE_TRACING_ENVIRONMENT"] = env_str
     print(f"📡 Langfuse Environment set to: {env_str}")
