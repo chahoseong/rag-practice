@@ -2,7 +2,7 @@
 evaluate.py — app.models 연동(Type-safe 파싱) + reference_documents 기반 평가
 - 가능하면 from app.models import GenerateResponse, DocumentChunk를 불러와
   응답을 Pydantic 모델로 검증/파싱합니다.
-- 불러올 수 없으면 동일 스키마의 로컬 모델로 fallback.
+- 불러울 수 없으면 동일 스키마의 로컬 모델로 fallback.
 
 기본 전략:
   1) /api/generate(use_rag=True) 1회 호출 → answer + reference_documents 확보
@@ -61,7 +61,14 @@ except Exception:
         prompt: Optional[str] = None
         question: Optional[str] = None
         elapsed_ms: int
+        # Langfuse Standard Fields for LLM-as-a-Judge
+        input: Optional[str] = None
+        output: Optional[str] = None
+        contexts: Optional[List[str]] = None
+        ground_truth: Optional[str] = None
+        choices: Optional[List[str]] = None
 
+    GenerateResponseModel = GenerateResponseFallback
     GenerateResponseModel = GenerateResponseFallback
     DocumentChunkModel = DocumentChunkFallback
 
@@ -157,7 +164,8 @@ def call_generate(base_url: str, query: str, max_tokens: int = 512, use_rag: boo
         session = _r.Session()
     payload = {"query": query, "use_rag": use_rag, "max_tokens": max_tokens}
     payload.update(kwargs)
-    r = session.post(f"{base_url}/api/generate", json=payload, timeout=120)
+    # CPU 환경을 고려하여 타임아웃을 300초로 연장
+    r = session.post(f"{base_url}/api/generate", json=payload, timeout=300)
     r.raise_for_status()
     return r.json()
 
@@ -199,6 +207,8 @@ def _print_rag_sample(idx, item_id, q, expected_ids, used_ids, p_at_k, r_at_k, r
         print("! must_cite violated: no reference_documents")
     if neg_hit:
         print(f"! negative matched: {negatives}")
+    if negatives and contains_negative(answer, negatives):
+        print(f"! negative case hit: {negatives}")
 
 def _print_mcq_sample(idx, q, gold, pred, correct, latency_ms, raw_answer):
     print(f"\n--- [{idx}] MCQ -----------------------------------")
@@ -214,13 +224,14 @@ def eval_rag_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
     ret_precs, ret_recalls, ret_mrrs = [], [], []
     gens_rel, gens_faith = [], []
     neg_violations = []
+    failures = []
     eff_ks: List[int] = []
     sess = None
     if not dry_run:
         import requests as _r
         sess = _r.Session()
 
-    for item in rows:
+    for idx, item in enumerate(rows):
         if "query" not in item:
             continue
         q = item["query"]
@@ -246,16 +257,27 @@ def eval_rag_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
                 elapsed_ms=0
             )
         else:
-            raw = call_generate(
-                base_url, q, max_tokens=512, use_rag=True, session=sess,
-                expected_points=expected_points,
-                expected_doc_ids=expected_ids
-            )
+            try:
+                raw = call_generate(
+                    base_url, q, max_tokens=512, use_rag=True, session=sess,
+                    expected_points=expected_points,
+                    expected_doc_ids=expected_ids
+                )
+            except Exception as e:
+                if verbose:
+                    print(f"\n[Error] {item.get('id', '?')}: {e}")
+                failures.append({"id": item.get("id", "?"), "error": str(e)})
+                continue
+
             # 타입 세이프 파싱
-            if hasattr(GenerateResponseModel, "model_validate"):
-                gen_obj = GenerateResponseModel.model_validate(raw)  # pydantic v2
-            else:
-                gen_obj = GenerateResponseModel(**raw)  # pydantic v1 or fallback
+            try:
+                if hasattr(GenerateResponseModel, "model_validate"):
+                    gen_obj = GenerateResponseModel.model_validate(raw)  # pydantic v2
+                else:
+                    gen_obj = GenerateResponseModel(**raw)  # pydantic v1 or fallback
+            except Exception as e:
+                failures.append({"id": item.get("id", "?"), "error": f"parsing_error: {e}"})
+                continue
 
         answer = gen_obj.response
         # gen_obj.reference_documents는 이미 모델 객체이므로 dict 리스트로 변환
@@ -309,10 +331,10 @@ def eval_rag_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
         gens_faith.append(fai)
 
         if verbose:
-            _print_rag_sample(idx=item.get('id', '?'), item_id=item.get('id', '?'), q=q, expected_ids=expected_ids,
-                              used_ids=retrieved_ids, p_at_k=p_at_k, r_at_k=r_at_k, rr=rr,
-                              rel=rel, faith=fai, must_cite=must_cite, neg_hit=neg_hit, negatives=negatives,
-                              answer=answer, refs=refs_list, used_k=effective_k)
+            _print_rag_sample(idx=idx+1, item_id=item.get('id', '?'), q=q, expected_ids=expected_ids,
+                               used_ids=retrieved_ids, p_at_k=p_at_k, r_at_k=r_at_k, rr=rr,
+                               rel=rel, faith=fai, must_cite=must_cite, neg_hit=neg_hit, negatives=negatives,
+                               answer=answer, refs=refs_list, used_k=effective_k)
 
     summary = {
         "retrieval_source": retrieval_source,
@@ -327,7 +349,8 @@ def eval_rag_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
             "relevance_mean": round(statistics.mean(gens_rel), 3) if gens_rel else 0.0,
             "faithfulness_mean": round(statistics.mean(gens_faith), 3) if gens_faith else 0.0,
         },
-        "neg_violations": neg_violations
+        "neg_violations": neg_violations,
+        "failures": failures[:10]
     }
     return summary
 
@@ -369,7 +392,7 @@ def eval_mcq_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
     latencies_ms = []
     failures = []
 
-    for q in rows:
+    for idx, q in enumerate(rows):
         if not {"question","choices","answer"} <= q.keys():
             continue
         prompt = build_prompt_mcq(q)
@@ -383,9 +406,12 @@ def eval_mcq_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
                                  "choices": q.get("choices"),
                                  "answer": q.get("answer")
                              },
-                             timeout=60)
+                             # CPU 환경을 고려하여 타임아웃을 300초로 연장
+                             timeout=300)
             t1 = time.perf_counter()
-        except _r.RequestException as e:
+        except Exception as e:
+            if verbose:
+                print(f"\n[Error] MCQ {idx+1}: {e}")
             failures.append({"q": q["question"], "error": f"request_error: {e}"})
             continue
 
@@ -399,7 +425,7 @@ def eval_mcq_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
             failures.append({"q": q["question"], "error": f"json_error: {e}", "body": resp.text[:300]})
             continue
 
-        # 타입 세이프 파싱(선택)
+        # 타입 세이프 파싱
         try:
             if hasattr(GenerateResponseModel, "model_validate"):
                 gen_obj = GenerateResponseModel.model_validate(data)  # v2
@@ -419,7 +445,7 @@ def eval_mcq_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
             correct += 1
         if verbose:
             lat = (elapsed_ms if isinstance(elapsed_ms, int) else int((t1-t0)*1000))
-            _print_mcq_sample(idx=q.get('id', '?'), q=q['question'], gold=q['answer'], pred=pred, correct=ok, latency_ms=lat, raw_answer=raw_answer)
+            _print_mcq_sample(idx=idx+1, q=q['question'], gold=q['answer'], pred=pred, correct=ok, latency_ms=lat, raw_answer=raw_answer)
         time.sleep(0.05)
 
     total = len([r for r in rows if {"question","choices","answer"} <= r.keys()])
