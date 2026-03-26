@@ -18,7 +18,7 @@ def setup_langfuse_env():
     
     env_str = f"{provider}/{model_name}"
     # Langfuse SDK가 자동 인식하는 환경 변수 주입
-    os.environ["LANGFUSE_ENV"] = env_str
+    os.environ["LANGFUSE_TRACING_ENVIRONMENT"] = env_str
     print(f"📡 Langfuse Environment set to: {env_str}")
 
 setup_langfuse_env()
