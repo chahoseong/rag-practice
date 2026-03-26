@@ -151,11 +151,12 @@ def call_retrieve(base_url: str, query: str, top_k: int = 5, session=None) -> Li
     r.raise_for_status()
     return r.json()["chunks"]
 
-def call_generate(base_url: str, query: str, max_tokens: int = 512, use_rag: bool = True, session=None) -> Dict[str, Any]:
+def call_generate(base_url: str, query: str, max_tokens: int = 512, use_rag: bool = True, session=None, **kwargs) -> Dict[str, Any]:
     if session is None:
         import requests as _r
         session = _r.Session()
     payload = {"query": query, "use_rag": use_rag, "max_tokens": max_tokens}
+    payload.update(kwargs)
     r = session.post(f"{base_url}/api/generate", json=payload, timeout=120)
     r.raise_for_status()
     return r.json()
@@ -245,7 +246,11 @@ def eval_rag_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
                 elapsed_ms=0
             )
         else:
-            raw = call_generate(base_url, q, max_tokens=512, use_rag=True, session=sess)
+            raw = call_generate(
+                base_url, q, max_tokens=512, use_rag=True, session=sess,
+                expected_points=expected_points,
+                expected_doc_ids=expected_ids
+            )
             # 타입 세이프 파싱
             if hasattr(GenerateResponseModel, "model_validate"):
                 gen_obj = GenerateResponseModel.model_validate(raw)  # pydantic v2
@@ -371,7 +376,13 @@ def eval_mcq_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
         try:
             t0 = time.perf_counter()
             resp = sess.post(f"{base_url}/api/generate",
-                             json={"query": prompt, "use_rag": True, "max_tokens": 1024},
+                             json={
+                                 "query": prompt, 
+                                 "use_rag": True, 
+                                 "max_tokens": 1024,
+                                 "choices": q.get("choices"),
+                                 "answer": q.get("answer")
+                             },
                              timeout=60)
             t1 = time.perf_counter()
         except _r.RequestException as e:

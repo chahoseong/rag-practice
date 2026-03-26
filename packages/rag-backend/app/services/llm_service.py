@@ -48,6 +48,7 @@ class LLMService:
         else:
             # 모델 어댑터 생성
             self.model_adapter = make_llm_model_adapter(self.model_provider)
+            print(f"🔄 Starting to load LLM model ({self.model_provider}). This may take a few minutes on CPU...")
             self.model = self.model_adapter.load()
         if self.model:
             self.model_loaded = True

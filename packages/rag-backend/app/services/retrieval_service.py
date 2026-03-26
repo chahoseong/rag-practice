@@ -55,8 +55,16 @@ class RetrievalService:
         self.vector_store = vector_store or make_vector_store_adapter()
         self.cross_encoder_model = os.getenv("CROSS_ENCODER_MODEL", "dragonkue/bge-reranker-v2-m3-ko")
         self.cross_encoder_device = os.getenv("CROSS_ENCODER_DEVICE", "cpu")
-        self.cross_encoder = CrossEncoder(self.cross_encoder_model, device=self.cross_encoder_device) if self._rerank_enabled else None
+        
         self._initialize()
+        
+        # 리랭커 로드 전 로그 추가
+        if self._rerank_enabled:
+            print(f"🔄 Loading CrossEncoder model: {self.cross_encoder_model}...")
+            self.cross_encoder = CrossEncoder(self.cross_encoder_model, device=self.cross_encoder_device)
+            print("✅ CrossEncoder model loaded successfully.")
+        else:
+            self.cross_encoder = None
 
     def _initialize(self):
         try:

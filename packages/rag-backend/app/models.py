@@ -36,6 +36,11 @@ class GenerateRequest(BaseModel):
     source_type: Optional[str] = None  # Optional filter by source type
     title: Optional[str] = None  # Optional filter by title keyword
     url: Optional[str] = None  # Optional filter by URL keyword
+    # Evaluation fields
+    choices: Optional[List[str]] = None  # MCQ options
+    ground_truth: Optional[str] = None   # General reference answer
+    answer: Optional[str] = None         # MCQ reference answer (for compatibility)
+    expected_points: Optional[List[str]] = None  # RAG reference points (for compatibility)
 
 class GenerateResponse(BaseModel):
     response: str
@@ -43,3 +48,9 @@ class GenerateResponse(BaseModel):
     prompt: str
     question: str
     elapsed_ms: int
+    # Langfuse Standard Fields for LLM-as-a-Judge
+    input: str
+    output: str
+    contexts: List[str]
+    ground_truth: Optional[str] = None
+    choices: Optional[List[str]] = None

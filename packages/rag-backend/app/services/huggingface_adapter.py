@@ -28,6 +28,8 @@ class HuggingfaceAdapter():
                     top_p=0.9,
                     repetition_penalty=1.03,
                     return_full_text=False,
+                    # max_length와 max_new_tokens 충돌 경고 해결을 위해 명시적 설정
+                    max_length=None,
                 ),
             )
 

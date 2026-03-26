@@ -42,12 +42,36 @@ async def generate(request: GenerateRequest):
         
         elapsed_ms = int((time.time() - start_time) * 1000)
         
+        # Langfuse 평가를 위한 데이터 구성
+        input_text = request.query
+        if request.choices:
+            input_text += f"\n선택지: {', '.join(request.choices)}"
+            
+        contexts = [doc.chunk_text for doc in reference_documents] if reference_documents else []
+        
+        # 실제 정답(Ground Truth) 결정 로직
+        # 1. 직접 ground_truth가 들어오면 사용
+        # 2. answer (MCQ) 가 들어오면 사용
+        # 3. expected_points (RAG) 가 들어오면 리스트를 문자열로 합쳐서 사용
+        final_ground_truth = request.ground_truth
+        if not final_ground_truth:
+            if request.answer:
+                final_ground_truth = request.answer
+            elif request.expected_points:
+                final_ground_truth = "; ".join(request.expected_points)
+        
         return GenerateResponse(
             response=response,
             reference_documents=reference_documents,
             prompt=prompt.to_string(),
             question=request.query,
-            elapsed_ms=elapsed_ms
+            elapsed_ms=elapsed_ms,
+            # 상세 평가 필드 매핑
+            input=input_text,
+            output=response,
+            contexts=contexts,
+            ground_truth=final_ground_truth,
+            choices=request.choices
         )
     
     except Exception as e:
