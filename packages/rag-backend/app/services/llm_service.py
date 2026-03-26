@@ -52,10 +52,7 @@ class LLMService:
             self.model = self.model_adapter.load()
         if self.model:
             self.model_loaded = True
-            # Langfuse 환경을 현재 모델 이름으로 설정
-            if hasattr(self, 'model_adapter') and self.model_adapter:
-                model_info = self.model_adapter.get_info()
-                os.environ["LANGFUSE_TRACING_ENVIRONMENT"] = model_info.get("model_name", self.model_provider)
+
         else:
             self.model_loaded = False
             print(f"❌ Failed to load model from provider: {self.model_provider}")
