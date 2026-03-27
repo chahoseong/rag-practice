@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3:*)",
+      "Bash(python -c \":*)",
+      "Bash(python -c \"import sys; sys.stdout.buffer.write\\(sys.stdin.buffer.read\\(\\)\\)\")",
+      "Bash(python build_chunks.py --input data/wiki.jsonl --output data/chunks.jsonl --chunk_size 500 --chunk_overlap 50)",
+      "Bash(PYTHONIOENCODING=utf-8 python build_chunks.py --input data/wiki.jsonl --output data/chunks.jsonl --chunk_size 500 --chunk_overlap 50)",
+      "WebSearch"
+    ]
+  }
+}

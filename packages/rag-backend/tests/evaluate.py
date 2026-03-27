@@ -231,14 +231,19 @@ def eval_rag_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
         import requests as _r
         sess = _r.Session()
 
-    for idx, item in enumerate(rows):
-        if "query" not in item:
-            continue
+    rag_rows = [item for item in rows if "query" in item]
+    total_count = len(rag_rows)
+
+    for idx, item in enumerate(rag_rows):
         q = item["query"]
+        item_id = item.get("id", "?")
         expected_ids = item.get("expected_doc_ids", [])
         expected_points = item.get("expected_points", [])
         negatives = item.get("negative_cases", [])
         must_cite = item.get("must_cite", False)
+
+        # 진행 상황 로그 출력
+        print(f"[{idx+1}/{total_count}] {item_id}: {q[:60]}...", flush=True)
 
         # 1) /api/generate 호출
         if dry_run:
@@ -392,9 +397,11 @@ def eval_mcq_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
     latencies_ms = []
     failures = []
 
-    for idx, q in enumerate(rows):
-        if not {"question","choices","answer"} <= q.keys():
-            continue
+    mcq_rows = [r for r in rows if {"question","choices","answer"} <= r.keys()]
+    total_count = len(mcq_rows)
+
+    for idx, q in enumerate(mcq_rows):
+        print(f"[{idx+1}/{total_count}] MCQ #{idx+1}: {q['question'][:60]}...", flush=True)
         prompt = build_prompt_mcq(q)
         try:
             t0 = time.perf_counter()
@@ -448,7 +455,7 @@ def eval_mcq_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
             _print_mcq_sample(idx=idx+1, q=q['question'], gold=q['answer'], pred=pred, correct=ok, latency_ms=lat, raw_answer=raw_answer)
         time.sleep(0.05)
 
-    total = len([r for r in rows if {"question","choices","answer"} <= r.keys()])
+    total = len(mcq_rows)
     return {
         "total": total,
         "correct": correct,
@@ -469,9 +476,31 @@ def main():
     parser.add_argument("--task", choices=["auto","rag","mcq"], default="auto")
     parser.add_argument("--retrieval-source", choices=["generate","retrieve"], default="generate")
     parser.add_argument("--verbose", action="store_true", help="샘플별 상세 비교 출력")
+    parser.add_argument("--ids", type=str, default=None,
+                        help="평가할 특정 ID 목록 (쉼표 구분, 예: G0001,G0004,G0010)")
     args = parser.parse_args()
 
     rows = read_jsonl(args.jsonl)
+
+    # 특정 항목만 필터링
+    # RAG: --ids G0001,G0004 (id 필드로 필터)
+    # MCQ: --ids 1,4 (1-based 인덱스로 필터, id 필드가 없으므로)
+    if args.ids:
+        target_ids = [i.strip() for i in args.ids.split(",")]
+        # id 필드가 있는 행이 하나라도 있으면 id 기반 필터링
+        has_id_field = any(r.get("id") for r in rows)
+        if has_id_field:
+            target_set = set(target_ids)
+            rows = [r for r in rows if r.get("id") in target_set]
+        else:
+            # 인덱스 기반 필터링 (1-based)
+            target_indices = set(int(i) - 1 for i in target_ids if i.isdigit())
+            rows = [r for i, r in enumerate(rows) if i in target_indices]
+        print(f"Filtering to {len(rows)} items: {args.ids}")
+        if not rows:
+            print("No matching items found.")
+            return
+
     mode = args.task
     if mode == "auto":
         first = next((r for r in rows if r), {})

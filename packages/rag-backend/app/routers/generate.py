@@ -28,7 +28,7 @@ async def generate(request: GenerateRequest):
                 top_k=request.top_k,
                 source_type=request.source_type,
                 title=request.title,
-                url=request.url
+                url=request.url,
             )
         
         # 프롬프트 생성
@@ -47,7 +47,7 @@ async def generate(request: GenerateRequest):
         if request.choices:
             input_text += f"\n선택지: {', '.join(request.choices)}"
             
-        contexts = [doc.chunk_text for doc in reference_documents] if reference_documents else []
+        contexts = [doc.original_chunk_text or doc.chunk_text for doc in reference_documents] if reference_documents else []
         
         # 실제 정답(Ground Truth) 결정 로직
         # 1. 직접 ground_truth가 들어오면 사용

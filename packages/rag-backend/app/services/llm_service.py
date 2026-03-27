@@ -24,8 +24,11 @@ class LLMModelAdapter(Protocol):
     def get_invoke_kwargs(self) -> dict: ...
     
 def make_context(reference_chunks: List[DocumentChunk]) -> str:
-    """문서 청크들을 하나의 문자열로 결합합니다."""
-    return "\n\n".join([chunk.chunk_text for chunk in reference_chunks])
+    """문서 청크들을 하나의 문자열로 결합합니다. 원본 텍스트가 있으면 사용합니다."""
+    return "\n\n".join([
+        chunk.original_chunk_text or chunk.chunk_text
+        for chunk in reference_chunks
+    ])
 
 
 def make_llm_model_adapter(model_provider: str) -> LLMModelAdapter:
@@ -60,11 +63,30 @@ class LLMService:
         
         self.max_tokens = int(os.getenv("LLM_MAX_TOKENS", 512))
         self.context_length = int(os.getenv("LLM_CONTEXT_LENGTH", 2048))
-        self.system_prompt = os.getenv("LLM_SYSTEM_PROMPT", "당신은 질문 내용에 답변할 수 있는 전문가입니다. 주어진 문서를 바탕으로 정확하고 도움이 되는 답변을 한국어로 제공해주세요. 문서에 없는 내용은 추측하지 말고, 문서 내용만을 바탕으로 답변해주세요.")
-        self.user_prompt_template = os.getenv("LLM_USER_PROMPT_TEMPLATE", "참고 문서:\n{context}\n\n질문: {question}:")
+        self.system_prompt = os.getenv("LLM_SYSTEM_PROMPT",
+            "당신은 질문 내용에 답변할 수 있는 전문가입니다. "
+            "주어진 참고 문서를 바탕으로 정확하고 도움이 되는 답변을 한국어로 제공해주세요.\n\n"
+            "규칙:\n"
+            "1. 반드시 참고 문서의 내용만을 바탕으로 답변하세요.\n"
+            "2. 답변 시 참고한 문서의 내용을 인용하여 근거를 명시해주세요.\n"
+            "3. 참고 문서에 질문에 대한 답변이 없으면, '제공된 문서에서 해당 정보를 찾을 수 없습니다.'라고 답변하세요.\n"
+            "4. 문서에 없는 내용을 추측하거나 지어내지 마세요."
+        )
+        self.user_prompt_template = os.getenv("LLM_USER_PROMPT_TEMPLATE", "참고 문서:\n{context}\n\n질문: {question}")
         self.prompt_template = ChatPromptTemplate.from_messages(
                 [("system", self.system_prompt), ("user", self.user_prompt_template)]
             )
+        
+    def _create_contextual_model(self):
+        """컨텍스트 전용 모델이 설정되어 있으면 해당 모델을 로드합니다."""
+        contextual_provider = os.getenv("CONTEXTUAL_LLM_PROVIDER")
+        if contextual_provider:
+            adapter = make_llm_model_adapter(contextual_provider)
+            # OpenAI의 경우 전용 모델명 적용
+            if contextual_provider == "openai":
+                os.environ["OPENAI_MODEL_NAME"] = os.getenv("CONTEXTUAL_OPENAI_MODEL_NAME", "gpt-4o-mini")
+            return adapter.load()
+        return self.model
         
     
     def _get_absolute_path(self, relative_path: str) -> str:
@@ -109,27 +131,43 @@ class LLMService:
         return prompt
     
     @observe()
-    async def llm_generate(self, prompt: ChatPromptValue, max_tokens: int = None) -> str:
+    async def generate(self, prompt: str, max_tokens: int = None) -> str:
         """
-        프롬프트를 바탕으로 답변을 생성합니다.
-        
-        Args:
-            prompt: 생성된 프롬프트
-            max_tokens: 최대 토큰 수 (None이면 기본값 사용)
+        단순 텍스트 프롬프트를 바탕으로 답변을 생성합니다. (Contextual Ingestion 등에 사용)
+        """
+        if not self.model:
+            return "Model not loaded."
             
-        Returns:
-            생성된 답변
-        """
-        if not self.model_loaded or not self.model:
-            # 모델이 로드되지 않은 경우 템플릿 기반 응답
-            return self._generate_template_response(prompt)
-        
         try:
-            # max_tokens가 지정되지 않으면 기본값 사용
             if max_tokens is None:
                 max_tokens = self.max_tokens
             
-            # 비동기 처리를 위해 동기 함수를 별도 스레드에서 실행
+            # 컨텍스트 전용 모델 사용 여부 판단
+            target_model = self._create_contextual_model()
+            
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(
+                None,
+                lambda: target_model.invoke(prompt, max_tokens=max_tokens)
+            )
+            answer = response.content if hasattr(response, 'content') else str(response)
+            return answer
+        except Exception as e:
+            print(f"❌ Error in generic generate: {str(e)}")
+            return ""
+
+    @observe()
+    async def llm_generate(self, prompt: ChatPromptValue, max_tokens: int = None) -> str:
+        """
+        프롬프트를 바탕으로 답변을 생성합니다.
+        """
+        if not self.model_loaded or not self.model:
+            return self._generate_template_response(prompt)
+        
+        try:
+            if max_tokens is None:
+                max_tokens = self.max_tokens
+            
             loop = asyncio.get_event_loop()
             response = await loop.run_in_executor(
                 None,
@@ -137,16 +175,12 @@ class LLMService:
                 prompt,
                 max_tokens
             )
-            
-            # 응답 메시지에서 텍스트 추출
-            answer = response.content if isinstance(response, BaseMessage) else str(response)
-            
+            answer = response.content if hasattr(response, 'content') else str(response)
             return answer
-            
         except Exception as e:
             print(f"❌ Error generating answer: {str(e)}")
             return self._generate_template_response(prompt)
-    
+
     def _generate_sync(self, prompt: ChatPromptValue, max_tokens: int) -> BaseMessage:
         """동기 방식으로 답변을 생성합니다."""
         try:

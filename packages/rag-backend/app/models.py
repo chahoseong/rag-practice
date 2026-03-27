@@ -17,6 +17,7 @@ class RetrievalRequest(BaseModel):
 class DocumentChunk(BaseModel):
     id: str
     chunk_text: str
+    original_chunk_text: Optional[str] = None  # 컨텍스트 주입 전 원본 텍스트
     chunk_index: int
     title: str
     url: str
