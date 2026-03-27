@@ -22,8 +22,10 @@ async def generate(request: GenerateRequest):
         
         if request.use_rag:
             # RAG를 사용하는 경우 관련 문서 검색
+            # retrieval_query가 별도로 지정된 경우 검색에는 그것을 사용
+            search_query = request.retrieval_query or request.query
             reference_documents = await retrieval_service.retrieve(
-                query=request.query,
+                query=search_query,
                 candidate_k=request.candidate_k,
                 top_k=request.top_k,
                 source_type=request.source_type,

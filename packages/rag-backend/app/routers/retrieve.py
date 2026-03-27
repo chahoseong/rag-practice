@@ -1,10 +1,13 @@
 from fastapi import APIRouter, HTTPException
 from app.models import RetrievalRequest, RetrievalResponse, DocumentChunk
-from app.services.retrieval_service import RetrievalService
 import time
 
 router = APIRouter()
-retrieval_service = RetrievalService()
+
+def _get_retrieval_service():
+    """generate 라우터와 동일한 RetrievalService 인스턴스를 공유합니다."""
+    from app.routers.generate import retrieval_service
+    return retrieval_service
 
 @router.post("/retrieve", response_model=RetrievalResponse)
 async def retrieve(request: RetrievalRequest):
@@ -14,6 +17,7 @@ async def retrieve(request: RetrievalRequest):
     try:
         start_time = time.time()
 
+        retrieval_service = _get_retrieval_service()
         chunks = await retrieval_service.retrieve(
             query=request.query,
             candidate_k=request.candidate_k,

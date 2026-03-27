@@ -407,8 +407,9 @@ def eval_mcq_records(rows: List[Dict[str, Any]], base_url: str, k: Optional[int]
             t0 = time.perf_counter()
             resp = sess.post(f"{base_url}/api/generate",
                              json={
-                                 "query": prompt, 
-                                 "use_rag": True, 
+                                 "query": prompt,
+                                 "retrieval_query": q["question"],  # 핵심 질문만 검색에 사용
+                                 "use_rag": True,
                                  "max_tokens": 1024,
                                  "choices": q.get("choices"),
                                  "answer": q.get("answer")

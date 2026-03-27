@@ -6,7 +6,18 @@
       "Bash(python -c \"import sys; sys.stdout.buffer.write\\(sys.stdin.buffer.read\\(\\)\\)\")",
       "Bash(python build_chunks.py --input data/wiki.jsonl --output data/chunks.jsonl --chunk_size 500 --chunk_overlap 50)",
       "Bash(PYTHONIOENCODING=utf-8 python build_chunks.py --input data/wiki.jsonl --output data/chunks.jsonl --chunk_size 500 --chunk_overlap 50)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(pip install:*)",
+      "Bash(.venv/Scripts/pip show:*)",
+      "Bash(ls D:/source/rag-practice/packages/rag-backend/.venv/Scripts/pip*)",
+      "Bash(ls D:/source/rag-practice/packages/rag-backend/.venv/bin/pip*)",
+      "Bash(ls D:/source/rag-practice/.venv/Scripts/pip*)",
+      "Bash(ls D:/source/rag-practice/packages/rag-backend/venv/Scripts/pip*)",
+      "Bash(D:/source/rag-practice/.venv/Scripts/pip show:*)",
+      "Bash(D:/source/rag-practice/.venv/Scripts/pip index:*)",
+      "Bash(D:/source/rag-practice/.venv/Scripts/pip install:*)",
+      "Bash(D:/source/rag-practice/.venv/Scripts/pip freeze:*)",
+      "Bash(D:/source/rag-practice/.venv/Scripts/python -c \":*)"
     ]
   }
 }

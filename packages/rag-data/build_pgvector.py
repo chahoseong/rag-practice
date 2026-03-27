@@ -145,8 +145,5 @@ def main():
     print(f"Inserted into PostgreSQL Database at: {args.connection_string.split('@')[-1]}")
     print(f"Insert complete. Total vectors: {len(documents)}")
 
-    # FTS 인덱스 빌드
-    build_fts_index(args.connection_string)
-
 if __name__ == "__main__":
     main()

@@ -141,15 +141,15 @@ class RetrievalService:
             )
             chunks = await loop.run_in_executor(None, dense_func)
 
-            # 2) Hybrid: BM25/FTS 검색 + RRF 병합
-            if self._hybrid_enabled and hasattr(self.vector_store, 'retrieve_fts'):
-                fts_func = partial(
-                    self.vector_store.retrieve_fts,
+            # 2) Hybrid: BM25 검색 + RRF 병합
+            if self._hybrid_enabled and hasattr(self.vector_store, 'retrieve_bm25'):
+                bm25_func = partial(
+                    self.vector_store.retrieve_bm25,
                     query=query,
                     top_k=retrieved_k,
                     source_type=source_type,
                 )
-                sparse_chunks = await loop.run_in_executor(None, fts_func)
+                sparse_chunks = await loop.run_in_executor(None, bm25_func)
 
                 chunks = reciprocal_rank_fusion(
                     chunks, sparse_chunks,

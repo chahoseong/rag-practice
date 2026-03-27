@@ -4,32 +4,10 @@ import argparse
 import numpy as np
 from langchain_postgres import PGVector
 from langchain_huggingface import HuggingFaceEmbeddings
-from sqlalchemy import create_engine, text
 
 CONNECTION_STRING = os.getenv("PG_CONNECTION_STRING", "postgresql+psycopg://postgres:postgres@localhost:5432/rag_db")
 COLLECTION_NAME = os.getenv("PG_COLLECTION_NAME", "rag_collection")
 EMBEDDING_MODEL_NAME = "BAAI/bge-m3"
-
-
-def build_fts_index(connection_string: str):
-    """PostgreSQL Full-Text Search 인덱스를 생성합니다."""
-    print("Building full-text search index...")
-    engine = create_engine(connection_string)
-    with engine.connect() as conn:
-        conn.execute(text("""
-            ALTER TABLE langchain_pg_embedding
-            ADD COLUMN IF NOT EXISTS fts_vector tsvector
-        """))
-        conn.execute(text("""
-            UPDATE langchain_pg_embedding
-            SET fts_vector = to_tsvector('simple', document)
-        """))
-        conn.execute(text("""
-            CREATE INDEX IF NOT EXISTS idx_fts_vector
-            ON langchain_pg_embedding USING GIN (fts_vector)
-        """))
-        conn.commit()
-    print("FTS index built successfully.")
 
 
 def main():
@@ -73,9 +51,6 @@ def main():
         pre_delete_collection=True,
     )
     print(f"Uploaded {len(embeddings)} vectors to PGVector")
-
-    # 4) FTS 인덱스 빌드
-    build_fts_index(args.connection_string)
 
     print(f"\nDone! Total vectors: {len(embeddings)}")
     print("Next: restart the backend server to use the new embeddings.")

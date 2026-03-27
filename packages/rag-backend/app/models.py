@@ -30,6 +30,7 @@ class RetrievalResponse(BaseModel):
 
 class GenerateRequest(BaseModel):
     query: str
+    retrieval_query: Optional[str] = None  # 검색에 사용할 별도 쿼리 (없으면 query 사용)
     use_rag: bool = True
     candidate_k: int = int(os.getenv("RERANK_CANDIDATES", 10))  # Default to 10 if not set
     top_k: int = int(os.getenv("TOP_K", 3))  # Default to 3 if not set
